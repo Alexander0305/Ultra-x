@@ -1,0 +1,639 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id                String    @id @default(cuid())
+  name              String
+  username          String    @unique
+  email             String    @unique
+  emailVerified     DateTime?
+  password          String?
+  bio               String?   @db.Text
+  location          String?
+  website           String?
+  occupation        String?
+  joinedAt          DateTime  @default(now())
+  avatar            String?
+  coverImage        String?
+  isVerified        Boolean   @default(false)
+  role              UserRole  @default(USER)
+  tier              UserTier  @default(FREE)
+  lastSeen          DateTime  @default(now())
+  isOnline          Boolean   @default(false)
+  
+  // Relationships
+  posts             Post[]
+  comments          Comment[]
+  likes             Like[]
+  stories           Story[]
+  sentMessages      Message[]  @relation("MessageSender")
+  receivedMessages  Message[]  @relation("MessageReceiver")
+  sentFriendRequests FriendRequest[] @relation("FriendRequestSender")
+  receivedFriendRequests FriendRequest[] @relation("FriendRequestReceiver")
+  friends           Friend[]   @relation("UserFriends")
+  friendsOf         Friend[]   @relation("FriendsOfUser")
+  notifications     Notification[] @relation("NotificationReceiver")
+  sentNotifications Notification[] @relation("NotificationSender")
+  groups            GroupMember[]
+  events            EventAttendee[]
+  products          Product[]
+  createdGroups     Group[]    @relation("GroupCreator")
+  createdEvents     Event[]    @relation("EventCreator")
+  accounts          Account[]
+  sessions          Session[]
+  savedPosts        SavedPost[]
+  mediaItems        MediaItem[]
+  roleId      String?
+  role        Role?     @relation(fields: [roleId], references: [id])
+
+  @@map("users")
+}
+
+// NextAuth models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Post model
+model Post {
+  id          String    @id @default(cuid())
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  authorId    String
+  privacy     Privacy   @default(PUBLIC)
+  
+  // Relationships
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  likes       Like[]
+  mediaItems  MediaItem[]
+  savedBy     SavedPost[]
+  
+  @@map("posts")
+}
+
+// Comment model
+model Comment {
+  id          String    @id @default(cuid())
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  authorId    String
+  postId      String
+  parentId    String?
+  
+  // Relationships
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent      Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies     Comment[] @relation("CommentReplies")
+  likes       Like[]
+  mediaItems  MediaItem[]
+  
+  @@map("comments")
+}
+
+// Like model
+model Like {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  userId      String
+  postId      String?
+  commentId   String?
+  
+  // Relationships
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post        Post?     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment     Comment?  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, postId, commentId])
+  @@map("likes")
+}
+
+// SavedPost model
+model SavedPost {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  userId      String
+  postId      String
+  
+  // Relationships
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, postId])
+  @@map("saved_posts")
+}
+
+// Story model
+model Story {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  authorId    String
+  
+  // Relationships
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mediaItems  MediaItem[]
+  views       StoryView[]
+  
+  @@map("stories")
+}
+
+// StoryView model
+model StoryView {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  storyId     String
+  viewerId    String
+  
+  // Relationships
+  story       Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  
+  @@unique([storyId, viewerId])
+  @@map("story_views")
+}
+
+// Message model
+model Message {
+  id          String    @id @default(cuid())
+  content     String?   @db.Text
+  createdAt   DateTime  @default(now())
+  senderId    String
+  receiverId  String
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  
+  // Relationships
+  sender      User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver    User      @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  mediaItems  MediaItem[]
+  
+  @@map("messages")
+}
+
+// Conversation model to track message threads
+model Conversation {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  participants ConversationParticipant[]
+  
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id              String    @id @default(cuid())
+  conversationId  String
+  userId          String
+  joinedAt        DateTime  @default(now())
+  leftAt          DateTime?
+  
+  // Relationships
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+// FriendRequest model
+model FriendRequest {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  status      FriendRequestStatus @default(PENDING)
+  senderId    String
+  receiverId  String
+  
+  // Relationships
+  sender      User      @relation("FriendRequestSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver    User      @relation("FriendRequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  @@unique([senderId, receiverId])
+  @@map("friend_requests")
+}
+
+// Friend model
+model Friend {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  userId      String
+  friendId    String
+  
+  // Relationships
+  user        User      @relation("UserFriends", fields: [userId], references: [id], onDelete: Cascade)
+  friend      User      @relation("FriendsOfUser", fields: [friendId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, friendId])
+  @@map("friends")
+}
+
+// Notification model
+model Notification {
+  id          String    @id @default(cuid())
+  type        NotificationType
+  createdAt   DateTime  @default(now())
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  content     String    @db.Text
+  senderId    String
+  receiverId  String
+  entityId    String?   // ID of the related entity (post, comment, etc.)
+  entityType  String?   // Type of the related entity
+  
+  // Relationships
+  sender      User      @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver    User      @relation("NotificationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+}
+
+// Group model
+model Group {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  privacy     Privacy   @default(PUBLIC)
+  avatar      String?
+  coverImage  String?
+  creatorId   String
+  
+  // Relationships
+  creator     User      @relation("GroupCreator", fields: [creatorId], references: [id])
+  members     GroupMember[]
+  posts       GroupPost[]
+  
+  @@map("groups")
+}
+
+// GroupMember model
+model GroupMember {
+  id          String    @id @default(cuid())
+  groupId     String
+  userId      String
+  role        GroupRole @default(MEMBER)
+  joinedAt    DateTime  @default(now())
+  
+  // Relationships
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+// GroupPost model
+model GroupPost {
+  id          String    @id @default(cuid())
+  groupId     String
+  postId      String    @unique
+  createdAt   DateTime  @default(now())
+  
+  // Relationships
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@map("group_posts")
+}
+
+// Event model
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  startDate   DateTime
+  endDate     DateTime
+  location    String?
+  isOnline    Boolean   @default(false)
+  onlineLink  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  privacy     Privacy   @default(PUBLIC)
+  coverImage  String?
+  creatorId   String
+  
+  // Relationships
+  creator     User      @relation("EventCreator", fields: [creatorId], references: [id])
+  attendees   EventAttendee[]
+  
+  @@map("events")
+}
+
+// EventAttendee model
+model EventAttendee {
+  id          String    @id @default(cuid())
+  eventId     String
+  userId      String
+  status      EventAttendeeStatus @default(INTERESTED)
+  joinedAt    DateTime  @default(now())
+  
+  // Relationships
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, userId])
+  @@map("event_attendees")
+}
+
+// Product model (for marketplace)
+model Product {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  price       Float
+  currency    String    @default("USD")
+  condition   ProductCondition @default(NEW)
+  location    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  status      ProductStatus @default(ACTIVE)
+  sellerId    String
+  categoryId  String
+  
+  // Relationships
+  seller      User      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category    ProductCategory @relation(fields: [categoryId], references: [id])
+  mediaItems  MediaItem[]
+  
+  @@map("products")
+}
+
+// ProductCategory model
+model ProductCategory {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  parentId    String?
+  
+  // Relationships
+  parent      ProductCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    ProductCategory[] @relation("CategoryHierarchy")
+  products    Product[]
+  
+  @@map("product_categories")
+}
+
+// MediaItem model for all types of media (images, videos, audio)
+model MediaItem {
+  id          String    @id @default(cuid())
+  type        MediaType
+  url         String
+  filename    String
+  mimeType    String
+  size        Int
+  width       Int?
+  height      Int?
+  duration    Int?      // For videos and audio (in seconds)
+  createdAt   DateTime  @default(now())
+  userId      String
+  postId      String?
+  commentId   String?
+  messageId   String?
+  storyId     String?
+  productId   String?
+  
+  // Relationships
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post        Post?     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment     Comment?  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  message     Message?  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  story       Story?    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@map("media_items")
+}
+
+// Environment Variables model
+model EnvironmentVariable {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  value       String
+  description String?   @db.Text
+  isSecret    Boolean   @default(false)
+  category    String    @default("general")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  
+  // Audit trail relationship
+  auditLogs   ConfigAuditLog[]
+
+  @@map("environment_variables")
+}
+
+// Audit log for configuration changes
+model ConfigAuditLog {
+  id          String    @id @default(cuid())
+  action      String    // CREATE, UPDATE, DELETE
+  entityType  String    // The type of entity being modified
+  entityId    String    // The ID of the entity being modified
+  previousValue String? @db.Text
+  newValue    String?   @db.Text
+  userId      String    // Who made the change
+  timestamp   DateTime  @default(now())
+  ipAddress   String?
+  userAgent   String?
+  
+  // Relationships
+  variable    EnvironmentVariable? @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  
+  @@map("config_audit_logs")
+}
+
+// Add this to your existing SecurityLog model or create it if it doesn't exist
+model SecurityLog {
+  id          String    @id @default(cuid())
+  userId      String
+  event       String
+  metadata    Json      @default("{}")
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  @@map("security_logs")
+}
+
+// Add this to your existing Report model or create it if it doesn't exist
+model Report {
+  id          String    @id @default(cuid())
+  reporterId  String
+  entityType  String    // USER, POST, COMMENT, etc.
+  entityId    String?
+  reason      String
+  description String?   @db.Text
+  status      ReportStatus @default(PENDING)
+  resolution  String?   @db.Text
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolvedById String?
+  
+  // Relationships
+  reporter    User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  
+  @@map("reports")
+}
+
+// Add these models to your existing schema.prisma file
+
+model Role {
+  id          String    @id
+  name        String    @unique
+  description String?   @db.Text
+  permissions String[]
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  users       User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String    @id
+  name        String    @unique
+  description String?   @db.Text
+  category    String    @default("custom")
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("permissions")
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  action      String    // CREATE, UPDATE, DELETE
+  entityType  String    // The type of entity being modified (ROLE, PERMISSION, USER, etc.)
+  entityId    String    // The ID of the entity being modified
+  userId      String    // Who made the change
+  timestamp   DateTime  @default(now())
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?     // Additional information about the change
+
+  @@map("audit_logs")
+}
+
+// Enums
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+enum UserTier {
+  FREE
+  PREMIUM
+  BUSINESS
+}
+
+enum Privacy {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FRIEND_REQUEST
+  MENTION
+  TAG
+  EVENT
+  GROUP
+  SYSTEM
+}
+
+enum GroupRole {
+  MEMBER
+  MODERATOR
+  ADMIN
+}
+
+enum EventAttendeeStatus {
+  INTERESTED
+  GOING
+  NOT_GOING
+}
+
+enum ProductCondition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum ProductStatus {
+  ACTIVE
+  SOLD
+  RESERVED
+  DELETED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
